@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sports Player</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif; 
+            background: #121212; color: #333; line-height: 1.4;
+        }
+
+        .container { max-width: 800px; margin: 0 auto; padding: 15px; }
+
+        header {
+            background: #2c3e50; color: white; padding: 20px;
+            border-radius: 8px; margin-bottom: 20px;
+        }
+
+        input[type="text"] {
+            width: 100%; padding: 12px; margin: 10px 0 15px 0;
+            border: 1px solid #ddd; border-radius: 6px;
+            font-size: 16px;
+        }
+
+        .btn {
+            background: #3498db; color: white; border: none;
+            padding: 12px 20px; border-radius: 6px; font-size: 16px;
+            cursor: pointer; width: 100%;
+        }
+        .btn:hover { background: #2980b9; }
+
+        .event-card {
+            background: white; padding: 15px; margin: 10px 0;
+            border-radius: 6px; border-left: 4px solid #3498db;
+            cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .event-card:hover { background: #f8f9fa; }
+
+        .time { color: #e74c3c; font-weight: bold; margin-right: 10px; }
+        .links { background: #ecf0f1; color: #7f8c8d; padding: 3px 8px; 
+                border-radius: 10px; font-size: 14px; margin-left: 8px; }
+
+        /* Overlay Player */
+        #player-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: white; display: none; z-index: 1000;
+            flex-direction: column;
+        }
+
+        #player-overlay.active { display: flex; }
+
+        .player-header {
+            background: #2c3e50; color: white; padding: 15px;
+            display: flex; justify-content: space-between;
+            align-items: center;
+        }
+
+        .link-switcher {
+            display: flex; gap: 8px; padding: 10px;
+            background: #ecf0f1; overflow-x: auto;
+        }
+
+        .link-btn {
+            background: white; border: 1px solid #bdc3c7;
+            padding: 6px 12px; border-radius: 4px;
+            cursor: pointer; white-space: nowrap;
+        }
+
+        .link-btn.active {
+            background: #3498db; color: white; border-color: #3498db;
+        }
+
+        .close-btn {
+            background: #e74c3c; color: white; border: none;
+            padding: 8px 15px; border-radius: 4px; cursor: pointer;
+        }
+
+        iframe {
+            flex: 1; width: 100%; border: none;
+        }
+
+        .status {
+            text-align: center; color: #7f8c8d;
+            padding: 10px; font-style: italic;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>Sports Player</h1>
+        <p>Incolla il codice Base64 per caricare gli eventi</p>
+        <input type="text" id="b64Input" placeholder="Base64 qui...">
+        <button class="btn" onclick="loadList()">CARICA</button>
+    </header>
+
+    <div id="status" class="status"></div>
+    <div id="button-container"></div>
+</div>
+
+<div id="player-overlay">
+    <div class="player-header">
+        <span id="current-title">Streaming</span>
+        <button class="close-btn" onclick="closePlayer()">✕ Chiudi</button>
+    </div>
+    <div id="link-switcher" class="link-switcher"></div>
+    <iframe id="videoIframe" src="about:blank" allowfullscreen></iframe>
+</div>
+
+<script>
+    const PROXY = "https://corsproxy.io/?";
+
+    function closePlayer() {
+        document.getElementById('player-overlay').classList.remove('active');
+        document.getElementById('videoIframe').src = "about:blank";
+    }
+
+    async function loadList() {
+        const b64Data = document.getElementById('b64Input').value.trim().replace('b64:', '');
+        if (!b64Data) return;
+
+        const container = document.getElementById('button-container');
+        container.innerHTML = "";
+        document.getElementById('status').innerText = "Caricamento...";
+
+        try {
+            const targetUrl = atob(b64Data);
+            const response = await fetch(PROXY + encodeURIComponent(targetUrl));
+            const data = await response.text();
+            
+            const rawLines = data.split(/\s(?=\d{2}:\d{2})|\n/).filter(l => l.trim().length > 5);
+            const blacklist = ["24/7 CHANNELS", "LINK", "𝗧𝗘𝗟𝗘𝗚𝗥𝗔𝗠", "TELEGRAM"];
+
+            // Raggruppamento eventi
+            const groupedEvents = {};
+
+            rawLines.forEach(line => {
+                const isBlacklisted = blacklist.some(word => line.toUpperCase().includes(word.toUpperCase()));
+                if (isBlacklisted) return;
+
+                const urlMatch = line.match(/https?:\/\/[^\s]+/);
+                if (!urlMatch) return;
+
+                const url = urlMatch[0];
+                const namePart = line.replace(url, "").replace("|", "").trim();
+                const timeMatch = namePart.match(/^\d{2}:\d{2}/);
+                const time = timeMatch ? timeMatch[0] : "--:--";
+                const cleanName = timeMatch ? namePart.replace(timeMatch[0], "").trim() : namePart;
+
+                const key = `${time}-${cleanName.toLowerCase()}`;
+
+                if (!groupedEvents[key]) {
+                    groupedEvents[key] = { time, name: cleanName, links: [] };
+                }
+                groupedEvents[key].links.push(url);
+            });
+
+            // Crea eventi
+            Object.values(groupedEvents).forEach(event => {
+                const card = document.createElement('div');
+                card.className = 'event-card';
+                card.innerHTML = `
+                    <div>
+                        <span class="time">${event.time}</span>
+                        <span>${event.name}</span>
+                        <span class="links">${event.links.length}</span>
+                    </div>
+                `;
+
+                card.onclick = () => openPlayer(event);
+                container.appendChild(card);
+            });
+
+            document.getElementById('status').innerHTML = `Eventi trovati: ${Object.keys(groupedEvents).length}`;
+
+        } catch (err) {
+            document.getElementById('status').innerText = "Errore nel caricamento.";
+        }
+    }
+
+    function openPlayer(event) {
+        document.getElementById('current-title').innerText = event.name;
+        const switcher = document.getElementById('link-switcher');
+        switcher.innerHTML = "";
+
+        event.links.forEach((link, index) => {
+            const btn = document.createElement('button');
+            btn.className = 'link-btn' + (index === 0 ? ' active' : '');
+            btn.innerText = `Link ${index + 1}`;
+            btn.onclick = () => {
+                document.querySelectorAll('.link-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById('videoIframe').src = link;
+            };
+            switcher.appendChild(btn);
+        });
+
+        document.getElementById('videoIframe').src = event.links[0];
+        document.getElementById('player-overlay').classList.add('active');
+    }
+</script>
+
+</body>
+</html>
